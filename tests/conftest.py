@@ -3,11 +3,18 @@
 # Se cargan automáticamente por pytest
 
 import pytest
-import torch
 import numpy as np
 from pathlib import Path
 import tempfile
 from unittest.mock import Mock
+
+# Lazy imports para evitar problemas con CUDA en CI/CD
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    torch = None
 
 
 # ============================================================================
@@ -24,13 +31,16 @@ def tmp_data_dir():
 @pytest.fixture
 def device():
     """Device para PyTorch (GPU si disponible, sino CPU)."""
-    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if TORCH_AVAILABLE:
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    return "cpu"
 
 
 @pytest.fixture
 def seed():
     """Seed para reproducibilidad."""
-    torch.manual_seed(42)
+    if TORCH_AVAILABLE:
+        torch.manual_seed(42)
     np.random.seed(42)
     return 42
 
@@ -48,7 +58,9 @@ def dummy_frame():
 @pytest.fixture
 def dummy_features():
     """Vector de características dummy (16,)."""
-    return torch.randn(16, dtype=torch.float32)
+    if TORCH_AVAILABLE:
+        return torch.randn(16, dtype=torch.float32)
+    return np.random.randn(16).astype(np.float32)
 
 
 @pytest.fixture
@@ -60,6 +72,9 @@ def dummy_batch(device):
         - x: (batch_size=32, 16) features
         - y: (batch_size=32, 2) targets (X, Y en pantalla)
     """
+    if not TORCH_AVAILABLE:
+        pytest.skip("PyTorch not available")
+
     x = torch.randn(32, 16, dtype=torch.float32, device=device)
     y = torch.randint(0, 1920, (32, 2), dtype=torch.float32, device=device)
     return x, y
@@ -68,6 +83,9 @@ def dummy_batch(device):
 @pytest.fixture
 def dummy_dataset():
     """Dataset dummy con 100 muestras."""
+    if not TORCH_AVAILABLE:
+        pytest.skip("PyTorch not available")
+
     from torch.utils.data import TensorDataset
 
     X = torch.randn(100, 16)
@@ -79,6 +97,9 @@ def dummy_dataset():
 @pytest.fixture
 def dummy_dataloader(dummy_dataset):
     """DataLoader dummy con batch_size=8."""
+    if not TORCH_AVAILABLE:
+        pytest.skip("PyTorch not available")
+
     from torch.utils.data import DataLoader
 
     return DataLoader(dummy_dataset, batch_size=8, shuffle=True)
@@ -95,6 +116,9 @@ def kan_model(device):
     Input: (batch, 16)
     Output: (batch, 2)
     """
+    if not TORCH_AVAILABLE:
+        pytest.skip("PyTorch not available")
+
     from src.brain.kan_model import KANModel
 
     model = KANModel(input_dim=16, output_dim=2)
@@ -105,6 +129,9 @@ def kan_model(device):
 @pytest.fixture
 def trained_kan_model(kan_model, dummy_dataloader, device):
     """Modelo KAN pre-entrenado en dummy data (5 épocas)."""
+    if not TORCH_AVAILABLE:
+        pytest.skip("PyTorch not available")
+
     import torch.optim as optim
 
     model = kan_model
@@ -178,26 +205,6 @@ def config():
 
 
 # ============================================================================
-# PARAMETRIZATION: Common combinations
-# ============================================================================
-
-@pytest.fixture(params=[0.001, 0.01, 0.1])
-def learning_rates(request):
-    """Parametrización: diferentes learning rates."""
-    return request.param
-
-
-@pytest.fixture(params=[
-    (480, 640),
-    (720, 1280),
-    (1080, 1920),
-])
-def frame_shapes(request):
-    """Parametrización: diferentes resoluciones de frame."""
-    return request.param
-
-
-# ============================================================================
 # MARKERS: Custom markers para organizar tests
 # ============================================================================
 
@@ -239,103 +246,3 @@ def pytest_collection_modifyitems(config, items):
         # Si es integration test
         if "integration" in item.nodeid:
             item.add_marker(pytest.mark.integration)
-
-
-# ============================================================================
-# UTILITY FUNCTIONS: Helpers para tests
-# ============================================================================
-
-def create_dummy_checkpoint(path, model, optimizer, epoch=1, loss=0.5):
-    """Crear un checkpoint dummy para testing."""
-    import torch
-
-    checkpoint = {
-        "model_state": model.state_dict(),
-        "optimizer_state": optimizer.state_dict(),
-        "epoch": epoch,
-        "loss": loss,
-    }
-
-    torch.save(checkpoint, path)
-    return checkpoint
-
-
-def assert_latency(func, max_ms=50):
-    """Assert que función ejecute en menos de max_ms milliseconds.
-
-    Usage:
-        assert_latency(lambda: model(x), max_ms=10)
-    """
-    import time
-
-    start = time.perf_counter()
-    func()
-    elapsed = (time.perf_counter() - start) * 1000
-
-    assert elapsed < max_ms, f"Latency {elapsed:.2f}ms exceeds {max_ms}ms"
-
-
-# ============================================================================
-# EXAMPLE USAGE IN TESTS
-# ============================================================================
-
-"""
-# En tu test file:
-
-def test_model_forward(kan_model, dummy_batch):
-    '''Test forward pass.'''
-    x, _ = dummy_batch
-    output = kan_model(x)
-    assert output.shape == (32, 2)
-
-
-def test_training_loss_decreases(trained_kan_model, dummy_dataloader, device):
-    '''Test que loss disminuye después de training.'''
-    criterion = torch.nn.MSELoss()
-
-    # Evaluar en datos
-    losses = []
-    with torch.no_grad():
-        for x, y in dummy_dataloader:
-            x, y = x.to(device), y.to(device)
-            pred = trained_kan_model(x)
-            loss = criterion(pred, y)
-            losses.append(loss.item())
-
-    # El modelo pre-entrenado debe tener loss bajo
-    assert np.mean(losses) < 1000  # Scales depende de dataset
-
-
-@pytest.mark.benchmark
-def test_model_latency(kan_model, device):
-    '''Test que forward pass es rápido.'''
-    x = torch.randn(1, 16, device=device)
-
-    assert_latency(lambda: kan_model(x), max_ms=10)
-
-
-@pytest.mark.parametrize("lr", [0.001, 0.01])
-def test_different_learning_rates(kan_model, lr, dummy_dataloader, device):
-    '''Parametrizado: probar diferentes LRs.'''
-    optimizer = torch.optim.Adam(kan_model.parameters(), lr=lr)
-    # ... training loop ...
-
-
-def test_with_config(config):
-    '''Usar config dummy.'''
-    assert config.roi_size == 64
-    assert config.batch_size == 32
-
-
-def test_with_mock_camera(mock_camera):
-    '''Usar mock en lugar de hardware real.'''
-    frame = mock_camera.read()
-    assert frame.shape == (480, 640, 3)
-
-
-def test_with_temp_files(tmp_data_dir):
-    '''Usar directorio temporal.'''
-    checkpoint_path = tmp_data_dir / "checkpoint.pt"
-    # ... guardar/cargar checkpoint ...
-    assert checkpoint_path.exists()
-"""
