@@ -1,0 +1,127 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gaze-inference"
+version = "0.0.1"
+description = "Active Inference-based Gaze Tracking System for Linux"
+authors = [{name = "GAZE-INFERENCE Team", email = "team@gaze-inference.local"}]
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.1.0",
+    "torchvision>=0.16.0",
+    "jax>=0.4.11",
+    "jaxlib>=0.4.11",
+    "mediapipe>=0.10.0",
+    "opencv-python>=4.8.0",
+    "PyQt6>=6.4.0",
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    "tensorrt>=8.6.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-benchmark>=4.0.0",
+    "pytest-pylint>=0.19.0",
+    "black>=23.9.0",
+    "pylint>=2.17.0",
+    "mypy>=1.5.0",
+    "isort>=5.12.0",
+    "pre-commit>=3.3.0",
+    "pytest-xdist>=3.3.0",
+    "memory-profiler>=0.61.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-org/gaze-inference"
+Documentation = "https://gaze-inference.readthedocs.io"
+Repository = "https://github.com/your-org/gaze-inference.git"
+
+[tool.setuptools]
+packages = ["src"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directorios
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+  | venv
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+skip_gitignore = true
+known_first_party = ["src"]
+
+[tool.pylint]
+max-line-length = 100
+fail-under = 8.0
+disable = [
+    "too-few-public-methods",
+    "missing-module-docstring",
+    "too-many-arguments",
+]
+good-names = ["i", "j", "k", "x", "y", "z", "f", "F", "q", "mu", "sigma", "dt", "_"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short --strict-markers"
+markers = [
+    "slow: tests que toman > 5 segundos",
+    "requires_real_camera: requieren C920 conectada",
+    "benchmark: tests de latencia/performance",
+    "integration: tests de múltiples componentes",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/site-packages/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
